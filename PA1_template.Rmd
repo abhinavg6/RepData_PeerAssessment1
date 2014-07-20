@@ -1,20 +1,162 @@
-# Reproducible Research: Peer Assessment 1
+---
+title: "Activity Monitoring Data Analysis"
+output: html_document
+---
 
+In this report, we're making use of data from a personal activity monitoring device. The device collects data at 5 minute intervals throughout the day. The data consists of two months of data from an anonymous individual collected during the months of October and November, 2012 and includes the number of steps taken in 5 minute intervals each day.
 
-## Loading and preprocessing the data
+The variables included in the dataset are:
+- **steps** - Number of steps taken in a 5-minute interval (missing values are coded as NA)
+- **date** - The date on which the measurement was taken in YYYY-MM-DD format
+- **interval** - Identifier for the 5-minute interval in which measurement was taken
 
+### Section 1 - Loading and preprocessing the data
 
+First we're reading the dataset, and converting the **date** variable (which is by default read as factor) to Date:
 
-## What is mean total number of steps taken per day?
+```{r}
+amdata <- read.csv(unz("activity.zip", "activity.csv"))
+amdata$date <- as.Date(amdata$date, format = "%Y-%m-%d")
+```
 
+There're `r nrow(amdata)` records in the dataset.
 
+### Section 2 - What is mean total number of steps taken per day?
 
-## What is the average daily activity pattern?
+We're summarizing the input dataset to calculate [sum][sumref], [mean][meanref] and [median][medianref] of **steps** for each **date**. We're ignoring the missing (NA) values for these calculations.
 
+```{r}
+library(plyr)
+amsummdata <- ddply(amdata, .(date), summarize, sum=sum(steps, na.rm=TRUE), mean=mean(steps, na.rm=TRUE), median=median(steps, na.rm=TRUE))
+```
 
+There're `r nrow(amsummdata)` records in the summarized dataset. If there're only NA steps for a day, the sum is calculated as 0, mean as [NaN][nanref], and median as NA. 
+We're using the summarized dataset to create below histogram plot, depicting total number of steps taken during each day:
 
-## Imputing missing values
+```{r histwithmissing, fig.height=4, fig.width=8}
+library(ggplot2)
+ggplot(amsummdata, aes(x=date,y=sum)) + geom_bar(stat="identity") + xlab("Date")  + ylab("Number of Steps") + theme_bw()
+```
 
+We're now using the summarized dataset to show the **sum**, **mean** and **median** total number of steps taken per day:
 
+```{r results='asis'}
+library(knitr)
+kable(amsummdata[,c("date","sum","mean","median")], align=c("c","c","c","c"))
+```
 
-## Are there differences in activity patterns between weekdays and weekends?
+### Section 3 - What is the average daily activity pattern?
+
+We're now summarizing the input dataset to calculate **average** number of **steps** for each **interval**, averaged across all days. We're again ignoring the missing (NA) values for these calculations.
+
+```{r}
+library(plyr)
+amintsummdata <- ddply(amdata, .(interval), summarize, avg=mean(steps, na.rm=TRUE))
+```
+
+There're `r nrow(amintsummdata)` records in this new summarized dataset. We're now using this new summarized dataset to create below time-series plot, depicting average number of steps by each 5-minute time interval:
+
+```{r tswithmissing, fig.height=4, fig.width=8}
+library(ggplot2)
+ggplot(amintsummdata, aes(x=interval,y=avg)) + geom_line() + xlab("5-minute time interval")  + ylab("Average number of Steps")
+```
+
+Calculate maximum average and corresponding time-interval:
+
+```{r}
+maxavgsteps <- max(amintsummdata$avg)
+maxavgts <- amintsummdata[which.max(amintsummdata$avg), 1]
+```
+
+The **time-interval `r maxavgts`** contains the maximum number of steps on average across all days in the dataset - **`r maxavgsteps`**.
+
+### Section 4 - Imputing missing values
+
+We're now removing the records with NA values from input dataset:
+
+```{r}
+amcompletedata <- na.omit(amdata)
+```
+
+There're **`r nrow(amdata) - nrow(amcompletedata)` number of missing values** in input dataset.
+
+To fill the missing data in input dataset, we're using the average of number of steps for each 5-minute time interval. We're referring the above summarized dataset **amintssummdata** from Section 3 to source the average values.
+
+```{r}
+# Create the new data frame from input dataset
+amfilleddata <- data.frame(amdata)
+# Initialize some integer variables
+tempcount <- 0
+tempind <- 0
+for(i in seq_along(1:nrow(amfilleddata))) {
+    if(is.na(amfilleddata[i, 1])) {
+        tempind <- rownames(amintsummdata[amintsummdata$interval == 
+                                              amfilleddata[i,3],]);
+        amfilleddata[i, 1] <- amintsummdata[tempind, 2]
+    }
+}
+# Count the number of missing values in new filled dataset
+amfilledmisscount <- length(amfilleddata[is.na(amfilleddata$steps),1])
+```
+
+There're **`r amfilledmisscount` missing values** in the filled dataset.
+
+We're now summarizing the **new filled dataset** to calculate **sum**, **mean** and **median** of **steps** for each **date**.
+
+```{r}
+library(plyr)
+amfilledsummdata <- ddply(amfilleddata, .(date), summarize, sumFilled=sum(steps), meanFilled=mean(steps), medianFilled=median(steps))
+```
+
+There're `r nrow(amfilledsummdata)` records in the **new filled summarized dataset**. We're using this dataset to create below histogram plot, depicting total number of steps taken during each day:
+
+```{r histwithfilled, fig.height=4, fig.width=8}
+library(ggplot2)
+ggplot(amfilledsummdata, aes(x=date,y=sumFilled)) + geom_bar(stat="identity") + xlab("Date")  + ylab("Number of Steps") + theme_bw()
+```
+
+We're now using the **new filled summarized dataset** to show the **sum**, **mean** and **median** total number of steps taken per day, along with showing corresponding variables from initial summarized dataset with unfilled values **(from Section 2 - for comparison)**:
+
+```{r results='asis'}
+library(knitr)
+amfilledsummdata <- cbind(amfilledsummdata,sumUnfilled=amsummdata$sum)
+amfilledsummdata <- cbind(amfilledsummdata,meanUnfilled=amsummdata$mean)
+amfilledsummdata <- cbind(amfilledsummdata,medianUnfilled=amsummdata$median)
+kable(amfilledsummdata[,c("date","sumFilled","sumUnfilled","meanFilled","meanUnfilled","medianFilled","medianUnfilled")], align=c("c","c","c","c","c","c"))
+```
+
+As we observe above, the values do differ before and after filling in all of the missing values. For e.g., there were **8 days** during which there were **0** total number of steps **(sumUnfilled)**, but now those days have **10766** total steps **(sumFilled)**.
+
+### Section 5 - Are there differences in activity patterns between weekdays and weekends?
+
+We're now adding a **typeofday** variable to filled dataset **amfilleddata**, whose value will be either "weekday" or "weekend", depending on the **date** of record.
+
+```{r}
+# Add the new column typeofday
+amfilleddata$typeofday <- ifelse(weekdays(amfilleddata$date) %in% c("Saturday", "Sunday"), "weekend", "weekday")
+# Count the number of weekday and weekend records in amended dataset
+amweekdaycount <- nrow(amfilleddata[amfilleddata$typeofday == "weekday",])
+amweekendcount <- nrow(amfilleddata[amfilleddata$typeofday == "weekend",])
+```
+
+There're `r amweekdaycount` weekday and `r amweekendcount` weekend records in the amended filled dataset. We're now summarizing the amended filled dataset to calculate **average** number of **steps** by each **interval** and **typeofday**, averaged across all weekend or weekdays.
+
+```{r}
+library(plyr)
+amfilledintsummdata <- ddply(amfilleddata, .(interval,typeofday), summarize, avg=mean(steps))
+```
+
+There're `r nrow(amfilledintsummdata)` records in the summarized dataset. We're now using this summarized dataset to create below time-series plot, depicting average number of steps (averaged across all weekday days or weekend days) by each 5-minute time interval:
+
+```{r tswithfilled, fig.height=4, fig.width=8}
+library(ggplot2)
+ggplot(amfilledintsummdata, aes(x=interval,y=avg)) + geom_line(aes(colour=factor(typeofday))) + facet_wrap(~typeofday, ncol=1) + xlab("5-minute time interval")  + ylab("Average number of Steps")
+```
+
+This completes the required analysis of activity monitoring data.
+
+---
+[sumref]: http://stat.ethz.ch/R-manual/R-devel/library/base/html/sum.html
+[meanref]: http://stat.ethz.ch/R-manual/R-devel/library/base/html/mean.html
+[medianref]: http://stat.ethz.ch/R-manual/R-patched/library/stats/html/median.html
+[nanref]: http://stat.ethz.ch/R-manual/R-devel/library/base/html/is.finite.html
